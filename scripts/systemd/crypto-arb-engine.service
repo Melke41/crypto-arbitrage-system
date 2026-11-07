@@ -1,0 +1,28 @@
+[Unit]
+Description=Crypto Arbitrage Intelligence & Trading Engine (Autonomous Pipeline)
+Documentation=https://github.com/Melke41/crypto-arbitrage-system
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=melkamu
+Group=melkamu
+WorkingDirectory=/home/melkamu/Downloads/cypto-arbitrage-system
+EnvironmentFile=-/home/melkamu/Downloads/cypto-arbitrage-system/.env
+ExecStart=/home/melkamu/Downloads/cypto-arbitrage-system/.venv/bin/python -m src.main
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=30
+
+# File descriptor limits for high-concurrency WebSockets
+LimitNOFILE=65536
+
+# Structured logging to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-arb-engine
+
+[Install]
+WantedBy=multi-user.target
