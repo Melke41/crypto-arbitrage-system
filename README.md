@@ -2,10 +2,10 @@
 
 An institutional-grade, event-driven, modular quantitative arbitrage research and execution engine in Python integrating **Binance Spot**, **Binance USDⓈ-M Perpetual Futures**, and **Kraken Spot**.
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/Melke41/crypto-arbitrage-system)
+[![Release](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/Melke41/crypto-arbitrage-system)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-77%20passed%20%7C%201%20skipped-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-82%20passed%20%7C%201%20skipped-brightgreen.svg)]()
 
 ---
 
@@ -186,6 +186,55 @@ Key endpoints:
 .venv/bin/streamlit run dashboard/app.py
 ```
 *Launches the institutional web dashboard at `http://localhost:8501` featuring real-time telemetry, portfolio distribution, opportunity funnel, execution logs, and an emergency Kill Switch trigger.*
+
+#### Terminal 3: Live Burn-In Diagnostic & Funnel Inspector CLI
+```bash
+.venv/bin/python scripts/burn_in_monitor.py --watch --interval 3
+```
+*Displays a real-time terminal telemetry dashboard tracking active WebSocket streams, dual-queue write depths, conversion funnel per strategy, risk manager rejection reasons, and realized PnL.*
+
+---
+
+### Alternative: Docker Compose Deployment (Hands-Off)
+
+To launch the complete institutional stack with a tuned PostgreSQL 16 container, autonomous engine, and dashboard:
+
+```bash
+# Build and start all 3 services in the background
+docker compose up -d --build
+
+# View real-time aggregated logs
+docker compose logs -f arbitrage-engine
+
+# Access the control plane and dashboard
+# FastAPI Control Plane : http://localhost:8000/health
+# Streamlit Dashboard   : http://localhost:8501
+
+# Run the CLI monitor inside the container network or on host
+.venv/bin/python scripts/burn_in_monitor.py --watch
+```
+
+---
+
+### Alternative: Linux `systemd` Services (Production VPS / Server)
+
+For background execution on Ubuntu/Debian servers managed by `systemd`:
+
+```bash
+# Copy unit files to systemd directory
+sudo cp scripts/systemd/crypto-arb-engine.service /etc/systemd/system/
+sudo cp scripts/systemd/crypto-arb-dashboard.service /etc/systemd/system/
+
+# Reload systemd daemon
+sudo systemctl daemon-reload
+
+# Enable and start services
+sudo systemctl enable --now crypto-arb-engine.service
+sudo systemctl enable --now crypto-arb-dashboard.service
+
+# Inspect live journald logs
+journalctl -u crypto-arb-engine -f
+```
 
 ---
 

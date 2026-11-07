@@ -17,13 +17,15 @@
 | **Core Orchestrator & API** | **Tick-to-Trade Orchestrator & FastAPI Server** | **Lead Agent** | `main` | **COMPLETED & MERGED** | Full autonomous pipeline and REST control endpoints tested |
 | **Phase 8 (Analytics & Backtest)** | **Quantitative Analytics & Backtester** | Agent 4 (QA/Val) | `agent4/phase7-8-validation` | **COMPLETED & MERGED** | PnL breakdown, opportunity funnel, risk-adjusted metrics, historical replay |
 | **Phase 9 (Dashboard & Validation)** | **Streamlit Dashboard & Chaos Simulation** | Agent 4 (QA/Val) | `agent4/phase7-8-validation` | **COMPLETED & MERGED** | Interactive operations dashboard & 4-strategy end-to-end chaos tests |
+| **Phase 10 (Deployment & Ops)** | **Docker, systemd & Live Burn-In Inspector** | **Lead Agent** | `phase10-ops-deployment` | **COMPLETED & MERGED** | Multi-stage Dockerfile, docker-compose, systemd services, CLI monitor (82 passed) |
 
 ---
 
-## 2. Release v1.0.0 Sign-Off Summary
+## 2. Release Sign-Off Matrix
 
-- **Mainline Status:** Production-ready release `v1.0.0`.
-- **Total Test Coverage:** 77 passed, 1 skipped across unit, integration, and chaos simulation suites.
+- **Release v1.0.0:** Baseline institutional architecture and 4-strategy execution engine.
+- **Release v1.1.0:** Production deployment packaging, containerization, systemd units, and live burn-in CLI telemetry monitor.
+- **Total Test Coverage:** 82 passed, 1 skipped across unit, integration, and chaos simulation suites.
 - **Strategies Fully Supported & Verified:**
   1. *Strategy 1:* Cross-Exchange Spot Arbitrage (`src/strategies/cross_exchange.py`)
   2. *Strategy 2:* Single-Exchange Triangular Arbitrage (`src/strategies/triangular.py`)

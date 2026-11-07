@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: crypto-arb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arb_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arb_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-crypto_arb}
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c max_connections=100
+      -c work_mem=16MB
+      -c checkpoint_completion_target=0.9
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arb_user} -d ${POSTGRES_DB:-crypto_arb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  arbitrage-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crypto-arb-engine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-arb_user}:${POSTGRES_PASSWORD:-arb_pass}@postgres:5432/${POSTGRES_DB:-crypto_arb}
+      EXECUTION_MODE: ${EXECUTION_MODE:-PAPER}
+      LIVE_TRADING_ENABLED: ${LIVE_TRADING_ENABLED:-false}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crypto-arb-dashboard
+    restart: unless-stopped
+    command: ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    depends_on:
+      - arbitrage-engine
+    environment:
+      API_URL: http://arbitrage-engine:8000
+    ports:
+      - "8501:8501"
+
+volumes:
+  pgdata:
+    driver: local

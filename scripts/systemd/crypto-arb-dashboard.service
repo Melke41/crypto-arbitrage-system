@@ -1,0 +1,27 @@
+[Unit]
+Description=Crypto Arbitrage Streamlit Operations & Kill-Switch Dashboard
+Documentation=https://github.com/Melke41/crypto-arbitrage-system
+After=network.target crypto-arb-engine.service
+Requires=crypto-arb-engine.service
+
+[Service]
+Type=simple
+User=melkamu
+Group=melkamu
+WorkingDirectory=/home/melkamu/Downloads/cypto-arbitrage-system
+EnvironmentFile=-/home/melkamu/Downloads/cypto-arbitrage-system/.env
+Environment=API_URL=http://127.0.0.1:8000
+ExecStart=/home/melkamu/Downloads/cypto-arbitrage-system/.venv/bin/streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=15
+
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-arb-dashboard
+
+[Install]
+WantedBy=multi-user.target
