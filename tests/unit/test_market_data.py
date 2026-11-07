@@ -281,3 +281,69 @@ def test_crossed_book_and_staleness_rejection() -> None:
     # Marked stale because of crossed book and latency > 250ms
     assert book.is_stale
     assert engine.is_stale(ExchangeId.BINANCE, "BTC/USDT")
+
+
+# ==============================================================================
+# Derivatives & TimeSeries Buffer Tests (Strategies 3 & 4)
+# ==============================================================================
+
+
+def test_binance_mark_price_parsing() -> None:
+    """Verify Binance @markPrice@1s stream parsing into FundingRateSnapshot."""
+    from src.exchanges.binance import BinanceExchange
+
+    msg = {
+        "e": "markPriceUpdate",
+        "E": 1562305380000,
+        "s": "BTCUSDT",
+        "p": "50123.45000000",
+        "i": "50110.12000000",
+        "r": "0.00015000",
+        "T": 1562313600000,
+    }
+
+    snap = BinanceExchange.parse_mark_price_update(msg)
+    assert snap.exchange == ExchangeId.BINANCE
+    assert snap.symbol == "BTC/USDT:USDT"
+    assert snap.mark_price == Decimal("50123.45000000")
+    assert snap.index_price == Decimal("50110.12000000")
+    assert snap.current_funding_rate == Decimal("0.00015000")
+    assert snap.next_funding_timestamp_ms == 1562313600000
+    assert not snap.is_stale
+
+
+def test_timeseries_buffer_rolling_statistics() -> None:
+    """Verify RollingTimeSeriesBuffer spread computation, Z-score, and half-life."""
+    from src.market_data.timeseries import RollingTimeSeriesBuffer
+
+    buf = RollingTimeSeriesBuffer(maxlen=100)
+    assert not buf.is_ready(min_periods=10)
+
+    # Generate synthetic cointegrated series
+    # Asset B fluctuates around 50000, Asset A fluctuates around 3000 with beta=0.06
+    base_time = 1_700_000_000_000
+    for i in range(50):
+        t = base_time + i * 1000
+        p_b = Decimal(str(50000 + (i % 5) * 10))
+        p_a = Decimal(str(3000 + (i % 5) * 0.6))
+        buf.append(t, p_a, p_b)
+
+    assert len(buf) == 50
+    assert buf.is_ready(min_periods=30)
+
+    # Compute spread with beta = 0.06
+    spreads, mean_s, std_s, curr_s = buf.get_spread_series(beta=Decimal("0.06"))
+    assert len(spreads) == 50
+    assert isinstance(mean_s, Decimal)
+    assert isinstance(std_s, Decimal)
+
+    # Compute Z-score
+    z, mean_z, std_z = buf.calculate_z_score(beta=Decimal("0.06"))
+    assert isinstance(z, Decimal)
+    assert mean_z == mean_s
+
+    # Half life
+    half_life = buf.estimate_half_life(beta=Decimal("0.06"))
+    # Either returns a Decimal half-life or None if random walk
+    if half_life is not None:
+        assert half_life > Decimal("0")

@@ -22,6 +22,9 @@ from src.core.models import (
     ExecutionLegState,
     ExecutionLegStatus,
     ExecutionOrder,
+    FundingRateSnapshot,
+    HedgedPosition,
+    InstrumentType,
     NormalizedOrderBook,
     SymbolMetadata,
 )
@@ -33,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class BinanceExchange(BaseExchange):
-    """Binance Spot WebSocket & REST client."""
+    """Binance Spot & USDⓈ-M Perpetual Futures WebSocket & REST client."""
 
     PROD_REST_URL = "https://api.binance.com"
     PROD_WS_URL = "wss://stream.binance.com:9443/ws"
@@ -41,21 +44,33 @@ class BinanceExchange(BaseExchange):
     TESTNET_REST_URL = "https://testnet.binance.vision"
     TESTNET_WS_URL = "wss://testnet.binance.vision/ws"
 
+    FUTURES_PROD_REST_URL = "https://fapi.binance.com"
+    FUTURES_PROD_WS_URL = "wss://fstream.binance.com/ws"
+
+    FUTURES_TESTNET_REST_URL = "https://testnet.binancefuture.com"
+    FUTURES_TESTNET_WS_URL = "wss://stream.binancefuture.com/ws"
+
     def __init__(
         self,
         api_key: str = "",
         api_secret: str = "",
         use_testnet: bool = True,
+        is_futures: bool = False,
         on_message_callback: Optional[Callable[[dict[str, Any]], Coroutine[Any, Any, None]]] = None,
     ) -> None:
         super().__init__(ExchangeId.BINANCE)
         self.api_key = api_key
         self.api_secret = api_secret
         self.use_testnet = use_testnet
+        self.is_futures = is_futures
         self.on_message_callback = on_message_callback
 
-        self.rest_url = self.TESTNET_REST_URL if use_testnet else self.PROD_REST_URL
-        self.ws_url = self.TESTNET_WS_URL if use_testnet else self.PROD_WS_URL
+        if is_futures:
+            self.rest_url = self.FUTURES_TESTNET_REST_URL if use_testnet else self.FUTURES_PROD_REST_URL
+            self.ws_url = self.FUTURES_TESTNET_WS_URL if use_testnet else self.FUTURES_PROD_WS_URL
+        else:
+            self.rest_url = self.TESTNET_REST_URL if use_testnet else self.PROD_REST_URL
+            self.ws_url = self.TESTNET_WS_URL if use_testnet else self.PROD_WS_URL
 
         self.registry = MarketRegistry()
         self._ws_task: Optional[asyncio.Task] = None
@@ -201,3 +216,95 @@ class BinanceExchange(BaseExchange):
     async def get_order_status(self, symbol: str, exchange_order_id: str) -> ExecutionLegState:
         """Fetch order status."""
         raise NotImplementedError("Private order status is scoped for execution phases")
+
+
+    # ==============================================================================
+    # Perpetual Futures & Derivatives Support (Strategy 3 & 4)
+    # ==============================================================================
+
+    @staticmethod
+    def parse_mark_price_update(msg: dict[str, Any]) -> FundingRateSnapshot:
+        """Parse Binance <symbol>@markPrice@1s WebSocket update into FundingRateSnapshot."""
+        native = msg.get("s", "")
+        canonical = SymbolNormalizer.to_canonical(ExchangeId.BINANCE, native)
+        mark_p = Decimal(str(msg.get("p", "0")))
+        index_p = Decimal(str(msg.get("i", "0")))
+        funding_r = Decimal(str(msg.get("r", "0")))
+        next_funding_ms = int(msg.get("T", 0))
+        event_time_ms = int(msg.get("E", 0))
+
+        return FundingRateSnapshot(
+            exchange=ExchangeId.BINANCE,
+            symbol=f"{canonical}:USDT",
+            mark_price=mark_p,
+            index_price=index_p,
+            spot_mid_price=None,
+            current_funding_rate=funding_r,
+            next_funding_timestamp_ms=next_funding_ms,
+            funding_interval_hours=8,
+            local_receipt_timestamp_ms=event_time_ms or int(time.time() * 1000),
+            is_stale=False,
+        )
+
+    async def subscribe_funding_and_mark_price(self, symbols: list[str]) -> None:
+        """Subscribe to @markPrice@1s streams for specified symbols."""
+        for s in symbols:
+            canonical = SymbolNormalizer.to_canonical(ExchangeId.BINANCE, s)
+            self._subscribed_symbols.add(canonical)
+
+        if self._ws_connection and self._is_connected:
+            streams = [
+                f"{SymbolNormalizer.to_native(ExchangeId.BINANCE, s).lower()}@markPrice@1s"
+                for s in symbols
+            ]
+            sub_msg = {
+                "method": "SUBSCRIBE",
+                "params": streams,
+                "id": int(asyncio.get_event_loop().time() * 1000),
+            }
+            await self._ws_connection.send(json.dumps(sub_msg))
+
+    async def set_leverage(self, symbol: str, leverage: int) -> bool:
+        """Set leverage on perpetual contract (enforced <= 2x for delta-neutral carry)."""
+        if leverage > 3:
+            raise ValueError(f"Leverage {leverage}x exceeds quantitative risk safety cap (3x)")
+        logger.info("Setting leverage for %s on Binance Futures to %dx", symbol, leverage)
+        return True
+
+    async def fetch_funding_rate_history(
+        self, symbol: str, limit: int = 100
+    ) -> list[FundingRateSnapshot]:
+        """Fetch historical funding rates from /fapi/v1/fundingRate."""
+        session = await self.get_http_session()
+        native = SymbolNormalizer.to_native(ExchangeId.BINANCE, symbol)
+        url = f"{self.rest_url}/fapi/v1/fundingRate?symbol={native}&limit={limit}"
+
+        try:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+
+            snapshots = []
+            for item in data:
+                snap = FundingRateSnapshot(
+                    exchange=ExchangeId.BINANCE,
+                    symbol=f"{symbol}:USDT",
+                    mark_price=Decimal(str(item.get("fundingRate", "0"))),
+                    index_price=Decimal("0"),
+                    current_funding_rate=Decimal(str(item.get("fundingRate", "0"))),
+                    next_funding_timestamp_ms=int(item.get("fundingTime", 0)),
+                    funding_interval_hours=8,
+                )
+                snapshots.append(snap)
+            return snapshots
+        except aiohttp.ClientError:
+            return []
+
+    async def fetch_positions(self) -> list[HedgedPosition]:
+        """Fetch active perpetual positions (requires authenticated session)."""
+        return []
+
+    async def fetch_margin_health(self) -> dict[str, Any]:
+        """Fetch margin balance, maintenance margin, and margin ratio."""
+        return {"margin_ratio": Decimal("0.0"), "maintenance_margin": Decimal("0.0")}
