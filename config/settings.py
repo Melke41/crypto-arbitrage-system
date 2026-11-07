@@ -45,7 +45,7 @@ class CrossExchangeStrategyConfig(BaseModel):
 
 
 class TriangularStrategyConfig(BaseModel):
-    name: str = "TRIANGULAR_SPOT"
+    name: str = "TRIANGULAR"
     initial_cycles: list[list[str]] = Field(
         default_factory=lambda: [
             ["USDT", "BTC", "ETH", "USDT"],
@@ -55,6 +55,37 @@ class TriangularStrategyConfig(BaseModel):
     )
     min_net_edge_bps: Decimal = Decimal("10.0")
     max_notional_usdt: Decimal = Decimal("1000.0")
+
+
+class FundingBasisStrategyConfig(BaseModel):
+    name: str = "FUNDING_BASIS"
+    candidate_pairs: list[str] = Field(
+        default_factory=lambda: ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    )
+    min_funding_rate_bps_per_8h: Decimal = Decimal("3.0")
+    min_annualized_yield_pct: Decimal = Decimal("15.0")
+    max_leverage: int = 2
+    min_liquidation_buffer_pct: Decimal = Decimal("35.0")
+    max_delta_drift_pct: Decimal = Decimal("1.0")
+    basis_convergence_target_bps: Decimal = Decimal("2.0")
+    max_holding_period_hours: int = 168
+
+
+class StatArbStrategyConfig(BaseModel):
+    name: str = "STAT_ARB"
+    candidate_pairs: list[dict[str, Any]] = Field(
+        default_factory=lambda: [
+            {"pair_id": "ETH_BTC_SPREAD", "symbol_a": "ETH/USDT", "symbol_b": "BTC/USDT"},
+            {"pair_id": "SOL_ETH_SPREAD", "symbol_a": "SOL/USDT", "symbol_b": "ETH/USDT"},
+        ]
+    )
+    lookback_window_ticks: int = 600
+    z_score_entry: Decimal = Decimal("2.2")
+    z_score_exit: Decimal = Decimal("0.4")
+    z_score_stop: Decimal = Decimal("4.0")
+    min_half_life_sec: int = 30
+    max_half_life_sec: int = 14400
+    max_notional_per_leg_usdt: Decimal = Decimal("500.0")
 
 
 class RiskLimitsConfig(BaseModel):
@@ -89,6 +120,10 @@ class SystemSettings(BaseModel):
 
     # Sub-configurations loaded from YAML
     exchanges: dict[str, ExchangeConfig] = Field(default_factory=dict)
+    strategy_1: CrossExchangeStrategyConfig = Field(default_factory=CrossExchangeStrategyConfig)
+    strategy_2: TriangularStrategyConfig = Field(default_factory=TriangularStrategyConfig)
+    strategy_3: FundingBasisStrategyConfig = Field(default_factory=FundingBasisStrategyConfig)
+    strategy_4: StatArbStrategyConfig = Field(default_factory=StatArbStrategyConfig)
     strategy_a: CrossExchangeStrategyConfig = Field(default_factory=CrossExchangeStrategyConfig)
     strategy_b: TriangularStrategyConfig = Field(default_factory=TriangularStrategyConfig)
     risk_limits: RiskLimitsConfig = Field(default_factory=RiskLimitsConfig)
@@ -135,10 +170,27 @@ class SystemSettings(BaseModel):
                 if "common" in raw_strat:
                     max_data_age = raw_strat["common"].get("max_data_age_ms", 250)
                     enable_synthetic_fx = raw_strat["common"].get("enable_synthetic_fx_basis", False)
-                if "strategy_a_cross_exchange" in raw_strat:
-                    strategy_a = CrossExchangeStrategyConfig(**raw_strat["strategy_a_cross_exchange"])
-                if "strategy_b_triangular" in raw_strat:
-                    strategy_b = TriangularStrategyConfig(**raw_strat["strategy_b_triangular"])
+                strategy_1 = CrossExchangeStrategyConfig()
+                strategy_2 = TriangularStrategyConfig()
+                strategy_3 = FundingBasisStrategyConfig()
+                strategy_4 = StatArbStrategyConfig()
+
+                if "strategy_1_cross_exchange" in raw_strat:
+                    strategy_1 = CrossExchangeStrategyConfig(**raw_strat["strategy_1_cross_exchange"])
+                elif "strategy_a_cross_exchange" in raw_strat:
+                    strategy_1 = CrossExchangeStrategyConfig(**raw_strat["strategy_a_cross_exchange"])
+
+                if "strategy_2_triangular" in raw_strat:
+                    strategy_2 = TriangularStrategyConfig(**raw_strat["strategy_2_triangular"])
+                elif "strategy_b_triangular" in raw_strat:
+                    strategy_2 = TriangularStrategyConfig(**raw_strat["strategy_b_triangular"])
+
+                if "strategy_3_funding_basis" in raw_strat:
+                    strategy_3 = FundingBasisStrategyConfig(**raw_strat["strategy_3_funding_basis"])
+
+                if "strategy_4_stat_arb" in raw_strat:
+                    strategy_4 = StatArbStrategyConfig(**raw_strat["strategy_4_stat_arb"])
+
                 if "risk_limits" in raw_strat:
                     risk_limits = RiskLimitsConfig(**raw_strat["risk_limits"])
                 if "persistence" in raw_strat:
@@ -156,8 +208,12 @@ class SystemSettings(BaseModel):
             max_data_age_ms=max_data_age,
             enable_synthetic_fx_basis=enable_synthetic_fx,
             exchanges=exchanges_data,
-            strategy_a=strategy_a,
-            strategy_b=strategy_b,
+            strategy_1=strategy_1,
+            strategy_2=strategy_2,
+            strategy_3=strategy_3,
+            strategy_4=strategy_4,
+            strategy_a=strategy_1,
+            strategy_b=strategy_2,
             risk_limits=risk_limits,
             persistence=persistence,
         )

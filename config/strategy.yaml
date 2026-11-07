@@ -1,11 +1,11 @@
-# Strategy & Risk Configuration
+# Quantitative Strategy Configuration for All 4 Strategies
 
 common:
   max_data_age_ms: 250
-  enable_synthetic_fx_basis: false  # Strict direct USDT/USDT pairs only
+  enable_synthetic_fx_basis: false
 
-strategy_a_cross_exchange:
-  name: "CROSS_EXCHANGE_SPOT"
+strategy_1_cross_exchange:
+  name: "CROSS_EXCHANGE"
   initial_pairs:
     - "BTC/USDT"
     - "ETH/USDT"
@@ -17,12 +17,59 @@ strategy_a_cross_exchange:
   unwind_escalate_ms: 300
   max_unwind_slippage_bps: 50.0
 
-strategy_b_triangular:
-  name: "TRIANGULAR_SPOT"
+strategy_2_triangular:
+  name: "TRIANGULAR"
   initial_cycles:
     - ["USDT", "BTC", "ETH", "USDT"]
     - ["USDT", "ETH", "BTC", "USDT"]
     - ["USDT", "SOL", "BTC", "USDT"]
+  min_net_edge_bps: 10.0
+  max_notional_usdt: 1000.0
+
+strategy_3_funding_basis:
+  name: "FUNDING_BASIS"
+  candidate_pairs:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
+  min_funding_rate_bps_per_8h: 3.0    # Minimum 0.03% (3 bps) per 8h funding payout
+  min_annualized_yield_pct: 15.0      # Minimum 15% annualized yield
+  max_leverage: 2                     # Max 2x leverage on perpetual hedge
+  min_liquidation_buffer_pct: 35.0    # Alert & unwind if mark price within 35% of liquidation
+  max_delta_drift_pct: 1.0            # Rebalance if Spot vs Perp notional drift exceeds 1.0%
+  basis_convergence_target_bps: 2.0   # Exit trigger when basis premium converges
+  max_holding_period_hours: 168       # Max 7 days holding period
+
+strategy_4_stat_arb:
+  name: "STAT_ARB"
+  candidate_pairs:
+    - pair_id: "ETH_BTC_SPREAD"
+      symbol_a: "ETH/USDT"
+      symbol_b: "BTC/USDT"
+    - pair_id: "SOL_ETH_SPREAD"
+      symbol_a: "SOL/USDT"
+      symbol_b: "ETH/USDT"
+  lookback_window_ticks: 600          # Rolling ticks/seconds for OLS hedge ratio & spread stats
+  z_score_entry: 2.2                  # Enter spread when |Z| >= 2.2
+  z_score_exit: 0.4                   # Exit spread when |Z| <= 0.4 (mean reversion)
+  z_score_stop: 4.0                   # Hard stop-loss if |Z| >= 4.0 (structural regime shift)
+  min_half_life_sec: 30               # Minimum mean-reversion speed
+  max_half_life_sec: 14400            # Maximum mean-reversion speed (4 hours)
+  max_notional_per_leg_usdt: 500.0
+
+# Aliases for backward compatibility
+strategy_a_cross_exchange:
+  name: "CROSS_EXCHANGE_SPOT"
+  initial_pairs: ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
+  min_net_edge_bps: 15.0
+  max_notional_usdt: 1000.0
+  unwind_cross_touch_bps: 20.0
+  unwind_escalate_ms: 300
+  max_unwind_slippage_bps: 50.0
+
+strategy_b_triangular:
+  name: "TRIANGULAR_SPOT"
+  initial_cycles: [["USDT", "BTC", "ETH", "USDT"]]
   min_net_edge_bps: 10.0
   max_notional_usdt: 1000.0
 

@@ -21,13 +21,17 @@ flowchart TD
         OB2 --> SG
     end
 
-    subgraph StrategyRisk [Strategy & Risk Engine]
+    subgraph StrategyRisk [Strategy & Risk Engine: 4 Quantitative Strategies]
         SG --> BUS["In-Memory Async Event Bus"]
-        BUS --> ST_X["Cross-Exchange Strategy"]
-        BUS --> ST_T["Triangular Strategy"]
-        ST_X --> RM["Pre-Trade Risk Manager"]
-        ST_T --> RM
-        RM --> BAL["Pre-Funded Inventory Balancer"]
+        BUS --> ST_1["Strategy 1: Cross-Exchange Spot"]
+        BUS --> ST_2["Strategy 2: Triangular Arbitrage"]
+        BUS --> ST_3["Strategy 3: Delta-Neutral Funding Carry"]
+        BUS --> ST_4["Strategy 4: Statistical Arbitrage Pairs"]
+        ST_1 --> RM["Pre-Trade Risk Manager"]
+        ST_2 --> RM
+        ST_3 --> RM
+        ST_4 --> RM
+        RM --> BAL["Inventory Balancer & Stateful Position Tracker"]
     end
 
     subgraph ExecutionLayer [Multi-Leg Execution Engine]
@@ -55,10 +59,10 @@ To prevent merge conflicts and maintain domain boundaries across parallel develo
 
 | Agent Role | Exclusive Write Ownership | Read-Only Access | Dedicated Branch Pattern |
 | :--- | :--- | :--- | :--- |
-| **Lead Agent** | `src/core/`, `src/main.py`, `src/api/`, `config/`, `docs/`, `pyproject.toml`, `migrations/` | Entire Repository | `phase0-arch-spec`, `integration/phase-*` |
-| **Agent 1 (Data)** | `src/exchanges/`, `src/market_data/`, `tests/unit/test_market_data*`, `tests/unit/test_exchanges*` | `src/core/`, `config/`, `docs/` | `agent1/phase1-connectivity`, `agent1/phase2-market-data` |
-| **Agent 2 (Quant)** | `src/strategies/`, `src/opportunity/`, `tests/unit/test_strategies*`, `tests/unit/test_opportunity*` | `src/core/`, `src/market_data/`, `docs/` | `agent2/phase3-strategies` |
-| **Agent 3 (Risk/Exec)**| `src/risk/`, `src/execution/`, `src/portfolio/`, `src/persistence/`, `tests/unit/test_risk*`, `tests/unit/test_execution*`, `tests/unit/test_persistence*` | `src/core/`, `config/`, `docs/` | `agent3/phase4-risk`, `agent3/phase5-paper`, `agent3/phase6-execution`, `agent3/phase7-persistence` |
+| **Lead Agent** | `src/core/`, `src/main.py`, `src/api/`, `config/`, `docs/`, `pyproject.toml`, `migrations/` | Entire Repository | `phase0-arch-spec`, `phase0-v2-four-strategies`, `integration/phase-*` |
+| **Agent 1 (Data)** | `src/exchanges/` (Spot & Perps), `src/market_data/` (incl. `timeseries.py`), `tests/unit/test_market_data*`, `tests/unit/test_exchanges*` | `src/core/`, `config/`, `docs/` | `agent1/phase1-connectivity`, `agent1/phase2-market-data` |
+| **Agent 2 (Quant)** | `src/strategies/` (`cross_exchange.py`, `triangular.py`, `funding_basis.py`, `stat_arb.py`), `src/opportunity/`, `tests/unit/test_strategies*`, `tests/unit/test_opportunity*` | `src/core/`, `src/market_data/`, `docs/` | `agent2/phase3-strategies` |
+| **Agent 3 (Risk/Exec)**| `src/risk/`, `src/execution/`, `src/portfolio/` (incl. `positions.py`), `src/persistence/`, `tests/unit/test_risk*`, `tests/unit/test_execution*`, `tests/unit/test_persistence*` | `src/core/`, `config/`, `docs/` | `agent3/phase4-risk`, `agent3/phase5-paper`, `agent3/phase6-execution`, `agent3/phase7-persistence` |
 | **Agent 4 (QA/Val)** | `tests/integration/`, `tests/simulation/`, `src/analytics/`, `dashboard/` | Entire Repository | `agent4/phase8-analytics`, `agent4/phase9-dashboard` |
 
 ### Critical Governance Rule
