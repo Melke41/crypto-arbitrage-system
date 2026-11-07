@@ -4,8 +4,8 @@
 
 | Phase | Milestone | Assigned Agent | Branch | Status | Acceptance Gate |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Phase 0** | **Architecture, Specification & Core Contracts** | **Lead Agent** | `phase0-arch-spec` | **COMPLETE (Awaiting PO Sign-off)** | 9/9 Core Unit Tests Passing (0 warnings) |
-| **Phase 1** | **Exchange Connectivity & Normalization** | Agent 1 (Data) | `agent1/phase1-connectivity` | PENDING | Mock & Live ping WS/REST connectivity |
+| **Phase 0** | **Architecture, Specification & Core Contracts** | **Lead Agent** | `phase0-arch-spec` | **COMPLETED & MERGED** | 11/11 Core Unit Tests Passing (0 warnings) |
+| **Phase 1** | **Exchange Connectivity & Normalization** | Agent 1 (Data) | `agent1/phase1-connectivity` | **IN_PROGRESS** | Pending |
 | **Phase 2** | **Verified L2 Order Book Engine** | Agent 1 (Data) | `agent1/phase2-market-data` | PENDING | Zero desync in 10-min Binance/Kraken diff playback |
 | **Phase 3** | **Strategy Engines (Cross & Triangular)** | Agent 2 (Quant) | `agent2/phase3-strategies` | PENDING | VWAP depth walker & directed cycle unit tests |
 | **Phase 4** | **Pre-Trade Risk & Inventory Balancer** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | PENDING | 100% of out-of-bounds orders rejected |
