@@ -30,6 +30,13 @@ from src.core.models import (
     StrategyType,
     SymbolMetadata,
     TimeInForce,
+    InstrumentType,
+    FundingRateSnapshot,
+    StatArbSignal,
+    StatArbAction,
+    PositionLeg,
+    HedgedPosition,
+    HedgedPositionStatus,
 )
 from src.core.events import (
     BaseEvent,
@@ -429,3 +436,123 @@ def test_configuration_loading() -> None:
     assert config.strategy_b.min_net_edge_bps == Decimal("10.0")
     assert config.risk_limits.max_daily_loss_usdt == Decimal("100.0")
     assert config.persistence.telemetry_queue_maxsize == 10000
+
+
+# ==============================================================================
+# Derivatives & Stateful Position Unit Tests (Strategies 3 & 4)
+# ==============================================================================
+
+
+def test_derivatives_symbol_metadata() -> None:
+    """Verify SymbolMetadata supports Perpetual Futures parameters."""
+    meta = SymbolMetadata(
+        exchange=ExchangeId.BINANCE,
+        symbol="BTC/USDT:USDT",
+        native_symbol="BTCUSDT",
+        base_asset="BTC",
+        quote_asset="USDT",
+        instrument_type=InstrumentType.LINEAR_PERP,
+        tick_size=Decimal("0.10"),
+        lot_size=Decimal("0.001"),
+        min_qty=Decimal("0.001"),
+        min_notional=Decimal("5.0"),
+        contract_size=Decimal("1"),
+        max_leverage=2,
+        maintenance_margin_rate=Decimal("0.005"),
+        funding_interval_hours=8,
+    )
+    assert meta.instrument_type == InstrumentType.LINEAR_PERP
+    assert meta.max_leverage == 2
+    assert meta.maintenance_margin_rate == Decimal("0.005")
+
+
+def test_funding_rate_snapshot_calculations() -> None:
+    """Verify basis_bps, annualized yield pct, and annualized yield bps formulas."""
+    # Mark price = 50100.0, Spot mid = 50000.0
+    # Current 8h funding rate = 0.0001 (1 bp / 0.01% per 8h)
+    # Basis: ((50100 - 50000) / 50000) * 10000 = (100 / 50000) * 10000 = 20.0 bps
+    # Periods per year: (365 * 24) / 8 = 1095
+    # Annualized yield %: 0.0001 * 1095 * 100 = 10.95%
+    # Annualized yield bps: 0.0001 * 1095 * 10000 = 1095 bps
+    snap = FundingRateSnapshot(
+        exchange=ExchangeId.BINANCE,
+        symbol="BTC/USDT:USDT",
+        mark_price=Decimal("50100.00"),
+        index_price=Decimal("50050.00"),
+        spot_mid_price=Decimal("50000.00"),
+        current_funding_rate=Decimal("0.0001"),
+        funding_interval_hours=8,
+    )
+
+    assert snap.basis_bps == Decimal("20.0")
+    assert snap.annualized_funding_yield_pct == Decimal("10.95")
+    assert snap.annualized_funding_yield_bps == Decimal("1095")
+
+
+def test_stat_arb_signal_validation() -> None:
+    """Verify StatArbSignal and Z-score state assignments."""
+    signal = StatArbSignal(
+        pair_id="ETH_BTC_SPREAD",
+        symbol_a="ETH/USDT",
+        symbol_b="BTC/USDT",
+        hedge_ratio_beta=Decimal("0.055"),
+        spread_value=Decimal("0.082"),
+        spread_mean=Decimal("0.050"),
+        spread_std=Decimal("0.010"),
+        z_score=Decimal("3.2"),
+        action=StatArbAction.ENTER_SHORT_SPREAD,
+    )
+
+    assert signal.pair_id == "ETH_BTC_SPREAD"
+    assert signal.z_score == Decimal("3.2")
+    assert signal.action == StatArbAction.ENTER_SHORT_SPREAD
+
+
+def test_hedged_position_delta_neutrality_and_margin() -> None:
+    """Verify HedgedPosition delta-neutrality drift, liquidation distance, and total PnL."""
+    leg_a = PositionLeg(
+        symbol="BTC/USDT",
+        exchange=ExchangeId.BINANCE,
+        instrument_type=InstrumentType.SPOT,
+        side=OrderSide.BUY,
+        quantity=Decimal("1.0"),
+        entry_price=Decimal("50000.00"),
+        current_price=Decimal("50500.00"),
+        unrealized_pnl=Decimal("500.00"),
+    )
+
+    leg_b = PositionLeg(
+        symbol="BTC/USDT:USDT",
+        exchange=ExchangeId.BINANCE,
+        instrument_type=InstrumentType.LINEAR_PERP,
+        side=OrderSide.SELL,
+        quantity=Decimal("1.0"),
+        entry_price=Decimal("50100.00"),
+        current_price=Decimal("50600.00"),
+        unrealized_pnl=Decimal("-500.00"),
+    )
+
+    position = HedgedPosition(
+        position_id="pos-delta-001",
+        strategy_type=StrategyType.FUNDING_BASIS,
+        status=HedgedPositionStatus.OPEN,
+        leg_a=leg_a,
+        leg_b=leg_b,
+        net_delta_usd=Decimal("0.0"),
+        entry_spread_or_basis_bps=Decimal("20.0"),
+        current_unrealized_pnl_quote=Decimal("0.0"),
+        realized_funding_pnl_quote=Decimal("25.00"),  # 25 USDT funding received
+        liquidation_price_leg_b=Decimal("75000.00"),
+    )
+
+    # 1. Delta neutrality: both legs are 1.0 BTC at prices ~50500 and ~50600
+    # notional_a = 50500, notional_b = 50600 -> drift = (100 / 50500) * 100 = 0.198% < 1.0%
+    assert position.is_delta_neutral(max_drift_pct=Decimal("1.0"))
+
+    # 2. Liquidation distance: (75000 - 50600) / 50600 * 100 = 48.22%
+    dist = position.liquidation_distance_pct(current_mark_price=Decimal("50600.00"))
+    assert dist is not None
+    assert dist > Decimal("45.0")
+
+    # 3. Total PnL = unrealized (0.0) + realized funding (25.00) = 25.00 USDT
+    assert position.total_pnl == Decimal("25.00")

@@ -17,8 +17,11 @@ from src.core.models import (
     ExecutionLegState,
     ExecutionOrder,
     ExecutionPlan,
+    FundingRateSnapshot,
+    HedgedPosition,
     NormalizedOrderBook,
     RiskDecision,
+    StatArbSignal,
     StrategyType,
     SymbolMetadata,
 )
@@ -187,6 +190,14 @@ class AsyncPersistenceWriter(Protocol):
         """Enqueue account balance snapshot (critical)."""
         ...
 
+    async def enqueue_position(self, position: HedgedPosition) -> None:
+        """Enqueue stateful hedged position record (critical)."""
+        ...
+
+    async def enqueue_funding_snapshot(self, snapshot: FundingRateSnapshot) -> None:
+        """Enqueue funding rate & basis snapshot (telemetry)."""
+        ...
+
     async def flush(self) -> None:
         """Wait for pending write queues to drain to storage."""
         ...
@@ -197,4 +208,81 @@ class AsyncPersistenceWriter(Protocol):
 
     async def stop(self) -> None:
         """Stop background worker task after draining."""
+        ...
+
+
+@runtime_checkable
+class DerivativesExchangeAdapter(ExchangeAdapter, Protocol):
+    """Protocol for derivatives exchanges supporting Perpetual Futures and funding streams."""
+
+    async def subscribe_funding_and_mark_price(self, symbols: list[str]) -> None:
+        """Subscribe to live mark price and funding rate streaming feeds."""
+        ...
+
+    async def fetch_funding_rate_history(
+        self, symbol: str, limit: int = 100
+    ) -> list[FundingRateSnapshot]:
+        """Fetch historical funding rate records for basis analysis."""
+        ...
+
+    async def set_leverage(self, symbol: str, leverage: int) -> bool:
+        """Set position leverage for perpetual contract (governed by RiskManager)."""
+        ...
+
+    async def fetch_positions(self) -> list[HedgedPosition]:
+        """Fetch active perpetual positions and margin state."""
+        ...
+
+    async def fetch_margin_health(self) -> dict[str, Any]:
+        """Query account margin balance, maintenance margin, and margin ratio."""
+        ...
+
+
+@runtime_checkable
+class PositionManager(Protocol):
+    """Protocol for lifecycle management of stateful multi-leg positions (Strategies 3 & 4)."""
+
+    async def open_hedged_position(self, plan: ExecutionPlan) -> HedgedPosition:
+        """Register and track a newly executed hedged position."""
+        ...
+
+    async def update_position_marks(self, marks: dict[str, Decimal]) -> list[HedgedPosition]:
+        """Mark-to-market all open positions, recomputing unrealized PnL and delta drift."""
+        ...
+
+    async def accrue_funding(self, event: Any) -> None:
+        """Accrue funding payout or fee to open hedged positions."""
+        ...
+
+    async def close_hedged_position(self, position_id: str, reason: str) -> bool:
+        """Trigger multi-leg exit orders to flatten open hedged position."""
+        ...
+
+    def get_open_positions(self) -> list[HedgedPosition]:
+        """Return all active unclosed hedged positions."""
+        ...
+
+
+@runtime_checkable
+class TimeSeriesBuffer(Protocol):
+    """Protocol for pre-allocated ring buffer storing mid-prices and basis history."""
+
+    def append(self, timestamp_ms: int, val_a: Decimal, val_b: Optional[Decimal] = None) -> None:
+        """Append price ticks to ring buffer (zero Pandas on hot path)."""
+        ...
+
+    def get_spread_series(
+        self, beta: Decimal
+    ) -> tuple[list[Decimal], Decimal, Decimal, Decimal]:
+        """Compute rolling spread series S_t = ln(P_a) - beta * ln(P_b), mean, and std."""
+        ...
+
+    def calculate_z_score(
+        self, beta: Decimal, current_spread: Decimal
+    ) -> tuple[Decimal, Decimal, Decimal]:
+        """Compute Z-score: (current_spread - rolling_mean) / rolling_std."""
+        ...
+
+    def estimate_half_life(self, beta: Decimal) -> Optional[Decimal]:
+        """Estimate Ornstein-Uhlenbeck mean-reversion half-life."""
         ...
