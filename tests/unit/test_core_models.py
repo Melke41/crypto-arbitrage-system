@@ -348,3 +348,84 @@ def test_domain_exceptions_hierarchy() -> None:
     err = OrderBookDesyncError("Binance sequence gap", {"expected": 100, "received": 105})
     assert "Binance sequence gap" in str(err)
     assert err.details["expected"] == 100
+
+
+def test_cross_exchange_lot_matching() -> None:
+    """Verify cross-exchange quantity harmonization across disparate exchange lot sizes."""
+    # Binance: step 0.001, min 0.001, min_notional 10
+    binance_meta = SymbolMetadata(
+        exchange=ExchangeId.BINANCE,
+        symbol="BTC/USDT",
+        native_symbol="BTCUSDT",
+        base_asset="BTC",
+        quote_asset="USDT",
+        tick_size=Decimal("0.01"),
+        lot_size=Decimal("0.001"),
+        min_qty=Decimal("0.001"),
+        min_notional=Decimal("10.0"),
+    )
+    # Kraken: step 0.0001, min 0.0002, min_notional 5
+    kraken_meta = SymbolMetadata(
+        exchange=ExchangeId.KRAKEN,
+        symbol="BTC/USDT",
+        native_symbol="XBTUSDT",
+        base_asset="BTC",
+        quote_asset="USDT",
+        tick_size=Decimal("0.1"),
+        lot_size=Decimal("0.0001"),
+        min_qty=Decimal("0.0002"),
+        min_notional=Decimal("5.0"),
+    )
+
+    # 1. Target quantity 0.123456 -> should be truncated to 0.123 to satisfy Binance step 0.001
+    ok, qty, err = SymbolMetadata.match_cross_exchange_quantity(
+        meta_buy=binance_meta,
+        meta_sell=kraken_meta,
+        target_quantity=Decimal("0.123456"),
+        buy_price=Decimal("60000.00"),
+        sell_price=Decimal("60100.00"),
+    )
+    assert ok
+    assert qty == Decimal("0.123")
+    assert err is None
+
+    # 2. Target quantity below min_notional: 0.001 BTC * 5000 = 5.0 < 10.0 min_notional
+    ok, qty, err = SymbolMetadata.match_cross_exchange_quantity(
+        meta_buy=binance_meta,
+        meta_sell=kraken_meta,
+        target_quantity=Decimal("0.001"),
+        buy_price=Decimal("5000.00"),
+        sell_price=Decimal("5050.00"),
+    )
+    assert not ok
+    assert "constraint failed" in str(err)
+    assert "min_notional" in str(err)
+
+    # 3. Target quantity truncates to zero due to lot_size incompatibility
+    ok_zero, qty_zero, err_zero = SymbolMetadata.match_cross_exchange_quantity(
+        meta_buy=binance_meta,
+        meta_sell=kraken_meta,
+        target_quantity=Decimal("0.0001"),
+        buy_price=Decimal("60000.00"),
+        sell_price=Decimal("60100.00"),
+    )
+    assert not ok_zero
+    assert "truncated to zero" in str(err_zero)
+
+
+def test_configuration_loading() -> None:
+    """Verify settings.py loads exchanges.yaml and strategy.yaml properly."""
+    from config.settings import SystemSettings
+
+    config = SystemSettings.load()
+    assert config.execution_mode == "PAPER"
+    assert not config.live_trading_enabled
+    assert not config.enable_synthetic_fx_basis
+    assert config.max_data_age_ms == 250
+    assert "binance" in config.exchanges
+    assert "kraken" in config.exchanges
+    assert config.exchanges["binance"].default_taker_fee_bps == Decimal("10.0")
+    assert config.strategy_a.min_net_edge_bps == Decimal("15.0")
+    assert config.strategy_b.min_net_edge_bps == Decimal("10.0")
+    assert config.risk_limits.max_daily_loss_usdt == Decimal("100.0")
+    assert config.persistence.telemetry_queue_maxsize == 10000

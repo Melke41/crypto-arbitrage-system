@@ -1,0 +1,36 @@
+# Strategy & Risk Configuration
+
+common:
+  max_data_age_ms: 250
+  enable_synthetic_fx_basis: false  # Strict direct USDT/USDT pairs only
+
+strategy_a_cross_exchange:
+  name: "CROSS_EXCHANGE_SPOT"
+  initial_pairs:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
+    - "XRP/USDT"
+  min_net_edge_bps: 15.0
+  max_notional_usdt: 1000.0
+  unwind_cross_touch_bps: 20.0
+  unwind_escalate_ms: 300
+  max_unwind_slippage_bps: 50.0
+
+strategy_b_triangular:
+  name: "TRIANGULAR_SPOT"
+  initial_cycles:
+    - ["USDT", "BTC", "ETH", "USDT"]
+    - ["USDT", "ETH", "BTC", "USDT"]
+    - ["USDT", "SOL", "BTC", "USDT"]
+  min_net_edge_bps: 10.0
+  max_notional_usdt: 1000.0
+
+risk_limits:
+  max_daily_loss_usdt: 100.0
+  max_open_plans: 3
+  circuit_breaker_cooldown_sec: 300
+
+persistence:
+  critical_queue_maxsize: 0      # Unbounded for critical execution/risk records
+  telemetry_queue_maxsize: 10000 # Bounded, droppable via put_nowait

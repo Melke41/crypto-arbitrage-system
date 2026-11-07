@@ -86,7 +86,18 @@ To execute quantity $Q$:
 $$C = \sum_{i=1}^{k} P_i \cdot \min(q_{rem, i}, Q_i) \quad \text{where} \quad \sum \min(q_{rem, i}, Q_i) = Q$$
 $$\text{VWAP} = \frac{C}{Q}$$
 
-### 3.2 Strategy A: Cross-Exchange Net Edge
+### 3.2 Strategy A: Cross-Exchange Net Edge & Fee Accounting
+
+#### Conservative Fee Baseline & BNB Discount Rules
+1. **Conservative Fee Tier:** The default fee model assumes standard VIP 0 rates of **0.10% (10 bps)** Maker and **0.10% (10 bps)** Taker for both exchanges (Binance and Kraken default).
+2. **BNB Fee Discount Gate:** A reduced fee of **0.075% (7.5 bps)** on Binance is applied **only if** `enable_bnb_discount = True` AND verified account `BNB` balance $\ge 0.1\text{ BNB}$.
+3. **Base-Asset vs. Quote-Asset Fee Deduction Impact:**
+   - On Binance Spot, when BNB fee deduction is **disabled**, fees on `BUY` orders are deducted directly from the **received base asset** (e.g., buying BTC with USDT delivers $Q \cdot (1 - f_{taker})$ in BTC).
+   - **Base Inventory Invariant:** Inventory tracking must credit the account with net base asset $Q_{net} = Q_{fill} \cdot (1 - f_{taker})$. Any concurrent or subsequent sell leg must not attempt to sell more than $Q_{net}$ unless pre-funded surplus exists.
+   - **Quote Profit Valuation:** In quote PnL accounting, the base-denominated fee is valued at the execution buy price: $\text{Fee}_{quote} = (Q_{fill} \cdot f_{taker}) \cdot P_{vwap\_buy}$.
+   - For `SELL` orders, fees are deducted in quote currency ($USDT$), directly reducing cash proceeds.
+
+#### Net Profit & Edge Formula
 $$\Pi_{net} = \left(Q_{exec} \cdot P_{vwap\_sell}\right) \cdot (1 - f_{taker, sell}) - \left(Q_{exec} \cdot P_{vwap\_buy}\right) \cdot (1 + f_{taker, buy})$$
 $$\text{Edge}_{bps} = \frac{\Pi_{net}}{Q_{exec} \cdot P_{vwap\_buy}} \times 10,000$$
 
@@ -98,7 +109,22 @@ $$K_{final} = \text{ExecuteLeg}(K_2, \text{Leg}_3, f_3)$$
 $$\text{Return}_{bps} = \frac{K_{final} - K_0}{K_0} \times 10,000$$
 At each leg:
 - `quantity` is truncated via `floor(quantity, lot_size)`.
+- Base-asset fee deductions are accounted for before passing intermediate balance to the next hop.
 - If `quantity * price < min_notional`, the cycle is aborted.
+
+---
+
+## 4. Emergency Unwind & Directional Hedging Invariants
+When multi-leg execution experiences partial fills, rejected subsequent legs, or timeouts:
+1. **Directional Aggressiveness Rules:**
+   - **Long Unwind (Flattening an acquired Long leg):** Submit an immediate `IOC` limit SELL crossing the touch at:
+     $$P_{unwind\_sell} = P_{best\_bid} \cdot (1 - 0.0020) \quad (-20\text{ bps})$$
+   - **Short Unwind (Covering an acquired Short leg):** Submit an immediate `IOC` limit BUY crossing the touch at:
+     $$P_{unwind\_buy} = P_{best\_ask} \cdot (1 + 0.0020) \quad (+20\text{ bps})$$
+2. **Escalation Policy:**
+   - If the `IOC` order does not completely fill within **300ms**, escalate immediately to an aggressive **MARKET** order.
+3. **Circuit Breaker Halt:**
+   - If realized unwind slippage exceeds **50 bps** ($0.50\%$) or market unwind rejects, trigger `EMERGENCY_HALT` and freeze automated order routing across all strategies.
 
 ---
 

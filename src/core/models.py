@@ -252,17 +252,17 @@ class SymbolMetadata(BaseModel):
         return Decimal(str(v))
 
     def truncate_amount(self, quantity: Decimal) -> Decimal:
-        """Floor truncate order quantity to exchange lot_size step-size multiple."""
+        """Floor truncate order quantity to exchange lot_size step-size multiple: (quantity // lot_size) * lot_size."""
         if self.lot_size <= Decimal("0"):
             return quantity
-        steps = (quantity / self.lot_size).to_integral_value(rounding=ROUND_DOWN)
+        steps = (quantity // self.lot_size)
         return steps * self.lot_size
 
     def truncate_price(self, price: Decimal) -> Decimal:
-        """Floor truncate price to exchange tick_size increment."""
+        """Floor truncate price to exchange tick_size increment: (price // tick_size) * tick_size."""
         if self.tick_size <= Decimal("0"):
             return price
-        steps = (price / self.tick_size).to_integral_value(rounding=ROUND_DOWN)
+        steps = (price // self.tick_size)
         return steps * self.tick_size
 
     def round_price(self, price: Decimal) -> Decimal:
@@ -282,6 +282,40 @@ class SymbolMetadata(BaseModel):
         if notional < self.min_notional:
             return False, f"Notional {notional} below min_notional {self.min_notional}"
         return True, None
+
+    @staticmethod
+    def match_cross_exchange_quantity(
+        meta_buy: SymbolMetadata,
+        meta_sell: SymbolMetadata,
+        target_quantity: Decimal,
+        buy_price: Decimal,
+        sell_price: Decimal,
+    ) -> tuple[bool, Decimal, Optional[str]]:
+        """Validate and harmonize executable quantity across two exchanges.
+
+        Floor-truncates quantity to satisfy both exchanges' step_size (lot_size) rules
+        and verifies that resulting quantity and prices satisfy min_qty, max_qty,
+        and min_notional on both venues simultaneously.
+        """
+        # Sequential floor truncation ensures step conformity across both exchange grids
+        qty = meta_buy.truncate_amount(target_quantity)
+        qty = meta_sell.truncate_amount(qty)
+        qty = meta_buy.truncate_amount(qty)
+
+        if qty <= Decimal("0"):
+            return False, Decimal("0"), "Quantity truncated to zero due to lot_size incompatibility"
+
+        # Validate on buy venue
+        valid_buy, err_buy = meta_buy.validate_order(buy_price, qty)
+        if not valid_buy:
+            return False, Decimal("0"), f"Buy exchange ({meta_buy.exchange.value}) constraint failed: {err_buy}"
+
+        # Validate on sell venue
+        valid_sell, err_sell = meta_sell.validate_order(sell_price, qty)
+        if not valid_sell:
+            return False, Decimal("0"), f"Sell exchange ({meta_sell.exchange.value}) constraint failed: {err_sell}"
+
+        return True, qty, None
 
 
 # ==============================================================================

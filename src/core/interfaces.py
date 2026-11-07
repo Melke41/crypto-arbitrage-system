@@ -155,26 +155,40 @@ class Executor(Protocol):
 
 @runtime_checkable
 class AsyncPersistenceWriter(Protocol):
-    """Protocol for non-blocking asynchronous persistence queue."""
+    """Protocol for non-blocking asynchronous dual-queue persistence engine.
+
+    Maintains two separate asynchronous queues:
+    1. critical_queue (unbounded): Execution plans, leg states, risk events, executable opportunities.
+    2. telemetry_queue (bounded, maxsize=10000): Raw L2 snapshots and theoretical opportunities dropped
+       via put_nowait when full to prevent event loop backpressure.
+    """
+
+    async def enqueue_critical(self, record: Any) -> None:
+        """Enqueue critical transaction records into unbounded non-dropping queue."""
+        ...
+
+    async def enqueue_telemetry(self, record: Any) -> None:
+        """Enqueue high-frequency analytical snapshots into bounded droppable queue."""
+        ...
 
     async def enqueue_opportunity(self, opportunity: ArbitrageOpportunity) -> None:
-        """Enqueue opportunity for background database persistence."""
+        """Enqueue opportunity (executable -> critical, theoretical -> telemetry)."""
         ...
 
     async def enqueue_execution_plan(self, plan: ExecutionPlan) -> None:
-        """Enqueue execution plan and leg states for background database persistence."""
+        """Enqueue execution plan and leg states (critical)."""
         ...
 
     async def enqueue_order_book_snapshot(self, book: NormalizedOrderBook) -> None:
-        """Enqueue order book snapshot for analytical auditing."""
+        """Enqueue order book snapshot for analytical auditing (telemetry)."""
         ...
 
     async def enqueue_balance(self, balance: BalanceRecord) -> None:
-        """Enqueue account balance snapshot."""
+        """Enqueue account balance snapshot (critical)."""
         ...
 
     async def flush(self) -> None:
-        """Wait for pending write queue to drain to storage."""
+        """Wait for pending write queues to drain to storage."""
         ...
 
     async def start(self) -> None:
