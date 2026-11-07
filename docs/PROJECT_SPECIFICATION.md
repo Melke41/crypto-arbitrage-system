@@ -112,6 +112,40 @@ At each leg:
 - Base-asset fee deductions are accounted for before passing intermediate balance to the next hop.
 - If `quantity * price < min_notional`, the cycle is aborted.
 
+### 3.4 Strategy 3: Delta-Neutral Funding-Rate & Basis Carry Arbitrage
+Strategy 3 captures funding rate payments and basis premium between spot and perpetual futures while hedging out directional beta:
+1. **Delta-Neutral Pairing:**
+   - Long Spot Asset ($Q_{spot}$ of Base) + Short Linear Perpetual ($Q_{perp}$ of Base Perp) with leverage capped at $1\times–2\times$.
+   - Enforce Delta Neutrality: $|Q_{spot} \cdot P_{spot} - Q_{perp} \cdot P_{perp}| \le \text{max\_delta\_drift\_pct} \times (Q_{spot} \cdot P_{spot})$.
+2. **Funding Yield & Basis Formulation:**
+   - Current funding payout per period:
+     $$\text{FundingPayout} = Q_{perp} \cdot P_{mark} \cdot r_{funding}$$
+   - Annualized funding yield:
+     $$\text{Yield}_{annual\_bps} = r_{funding} \times \left(\frac{365 \times 24}{\Delta t_{interval\_hours}}\right) \times 10,000$$
+   - Spot-Perp Basis in basis points:
+     $$\text{Basis}_{bps} = \frac{P_{mark\_perp} - P_{mid\_spot}}{P_{mid\_spot}} \times 10,000$$
+3. **Entry & Exit Invariants:**
+   - Enter when: $\text{Yield}_{annual\_bps} \ge \text{min\_annualized\_yield\_bps}$ AND $\text{Basis}_{bps} \ge 0$ AND available liquidation distance $\ge 35\%$.
+   - Exit when: $r_{funding} \le 0$ (funding flips negative) OR $\text{Basis}_{bps} \le \text{basis\_convergence\_target\_bps}$ OR max holding time reached.
+
+### 3.5 Strategy 4: Statistical Arbitrage (Cointegrated Pairs / Mean-Reversion)
+Strategy 4 trades mean-reverting price spreads across cointegrated assets:
+1. **Spread Definition & Rolling Regression:**
+   - Log price spread between Asset A and Asset B:
+     $$S_t = \ln(P_{A, t}) - \beta \cdot \ln(P_{B, t})$$
+   - Hedge ratio $\beta$ estimated via rolling OLS / Kalman filter over lookback window $N$ (e.g. 600 ticks):
+     $$\beta = \frac{\text{Cov}(\ln(P_A), \ln(P_B))}{\text{Var}(\ln(P_B))}$$
+2. **Z-Score Normalization:**
+   $$\mu_{S, t} = \frac{1}{N} \sum_{i=0}^{N-1} S_{t-i}, \quad \sigma_{S, t} = \sqrt{\frac{1}{N} \sum_{i=0}^{N-1} (S_{t-i} - \mu_{S, t})^2}$$
+   $$Z_t = \frac{S_t - \mu_{S, t}}{\sigma_{S, t}}$$
+3. **Ornstein-Uhlenbeck Half-Life Estimation:**
+   $$S_t - S_{t-1} = \theta (\mu - S_{t-1}) + \epsilon_t \implies \tau_{half\_life} = \frac{\ln(2)}{\theta}$$
+   Trades are only permitted if $\tau_{min} \le \tau_{half\_life} \le \tau_{max}$.
+4. **Action Triggers:**
+   - $|Z_t| \ge 2.2$: Enter Long Spread (Buy A, Sell B $\times \beta$) or Short Spread (Sell A, Buy B $\times \beta$).
+   - $|Z_t| \le 0.4$: Exit Spread (Mean reversion profit target achieved).
+   - $|Z_t| \ge 4.0$: Structural Stop-Loss (Spread divergence / regime break).
+
 ---
 
 ## 4. Emergency Unwind & Directional Hedging Invariants

@@ -17,8 +17,11 @@ from src.core.models import (
     ExecutionLegState,
     ExecutionOrder,
     ExecutionPlan,
+    FundingRateSnapshot,
+    HedgedPosition,
     NormalizedOrderBook,
     RiskDecision,
+    StatArbSignal,
 )
 
 
@@ -99,3 +102,31 @@ class SystemHaltEvent(BaseEvent):
     event_type: str = "SYSTEM_HALT"
     reason: str
     source: str
+
+
+# ==============================================================================
+# Derivatives & Stateful Position Events (Strategies 3 & 4)
+# ==============================================================================
+
+
+class FundingRateUpdatedEvent(BaseEvent):
+    """Fired when live funding rate or mark price is updated."""
+
+    event_type: str = "FUNDING_RATE_UPDATED"
+    snapshot: FundingRateSnapshot
+
+
+class StatArbSignalEvent(BaseEvent):
+    """Fired when Strategy 4 generates an actionable spread signal."""
+
+    event_type: str = "STAT_ARB_SIGNAL"
+    signal: StatArbSignal
+
+
+class PositionHealthEvent(BaseEvent):
+    """Fired when an open hedged position requires monitoring or margin rebalancing."""
+
+    event_type: str = "POSITION_HEALTH"
+    position: HedgedPosition
+    alert_type: str
+    message: str

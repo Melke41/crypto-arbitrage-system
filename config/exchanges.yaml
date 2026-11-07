@@ -1,7 +1,8 @@
-# Exchange Configuration Matrix: Binance Spot vs. Kraken Spot
+# Exchange Configuration Matrix: Spot & Perpetual Futures
 
-binance:
+binance_spot:
   exchange_id: "BINANCE"
+  instrument_type: "SPOT"
   rest_url: "https://api.binance.com/api/v3"
   testnet_rest_url: "https://testnet.binance.vision/api/v3"
   ws_url: "wss://stream.binance.com:9443/ws"
@@ -18,8 +19,25 @@ binance:
     orders_per_10s: 100
     orders_per_24h: 200000
 
-kraken:
+binance_futures:
+  exchange_id: "BINANCE"
+  instrument_type: "LINEAR_PERP"
+  rest_url: "https://fapi.binance.com"
+  testnet_rest_url: "https://testnet.binancefuture.com"
+  ws_url: "wss://fstream.binance.com/ws"
+  testnet_ws_url: "wss://stream.binancefuture.com/ws"
+  mark_price_stream_suffix: "@markPrice@1s"
+  default_maker_fee_bps: 2.0    # 0.02%
+  default_taker_fee_bps: 5.0    # 0.05%
+  max_leverage_limit: 2         # Delta-neutral safety cap
+  funding_interval_hours: 8
+  rate_limits:
+    ip_weight_per_min: 2400
+    orders_per_10s: 300
+
+kraken_spot:
   exchange_id: "KRAKEN"
+  instrument_type: "SPOT"
   rest_url: "https://api.kraken.com/0"
   ws_url: "wss://ws.kraken.com/v2"
   ws_auth_url: "wss://ws-auth.kraken.com/v2"
@@ -28,3 +46,37 @@ kraken:
   rate_limits:
     call_counter_max: 20
     decay_rate_per_sec: 0.5
+
+kraken_futures:
+  exchange_id: "KRAKEN"
+  instrument_type: "LINEAR_PERP"
+  rest_url: "https://futures.kraken.com/derivatives/api/v3"
+  ws_url: "wss://futures.kraken.com/ws/v1"
+  default_maker_fee_bps: 2.0
+  default_taker_fee_bps: 5.0
+  max_leverage_limit: 2
+  funding_interval_hours: 4
+  rate_limits:
+    call_counter_max: 20
+    decay_rate_per_sec: 0.5
+
+# Aliases for backward compatibility
+binance:
+  exchange_id: "BINANCE"
+  rest_url: "https://api.binance.com/api/v3"
+  testnet_rest_url: "https://testnet.binance.vision/api/v3"
+  ws_url: "wss://stream.binance.com:9443/ws"
+  testnet_ws_url: "wss://testnet.binance.vision/ws"
+  depth_stream_suffix: "@depth@100ms"
+  default_maker_fee_bps: 10.0
+  default_taker_fee_bps: 10.0
+  rate_limits: { ip_weight_per_min: 1200 }
+
+kraken:
+  exchange_id: "KRAKEN"
+  rest_url: "https://api.kraken.com/0"
+  ws_url: "wss://ws.kraken.com/v2"
+  ws_auth_url: "wss://ws-auth.kraken.com/v2"
+  default_maker_fee_bps: 25.0
+  default_taker_fee_bps: 40.0
+  rate_limits: { call_counter_max: 20 }
