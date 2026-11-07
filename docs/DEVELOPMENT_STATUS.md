@@ -9,8 +9,8 @@
 | **Phase 1** | **Exchange Connectivity & 4-Strategy Data Engine** | Agent 1 (Data) | `agent1/phase1-connectivity` | **COMPLETED & MERGED** | Spot + Perp WS feeds & TimeSeriesBuffer |
 | **Phase 2 (Market Data)** | **Verified L2 Book & Mark-Price Engine** | Agent 1 (Data) | `agent1/phase1-connectivity` | **COMPLETED & MERGED** | U/u sequence tracker & Kraken CRC32 verified |
 | **Phase 2 (Persistence)** | **L2 Snapshot Database Partitioning** | Agent 3 (Risk/Exec) | `agent3/phase7-persistence` | PENDING | Scoped with Phase 7 async persistence worker |
-| **Phase 3** | **4 Quantitative Strategy Engines & Opportunity Evaluator** | Agent 2 (Quant) | `agent2/phase3-strategies` | **IN_PROGRESS** | Strategies 1, 2, 3, 4 + Evaluator |
-| **Phase 4** | **Pre-Trade Risk & Inventory Balancer** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | PENDING | 100% of out-of-bounds orders rejected |
+| **Phase 3** | **4 Quantitative Strategy Engines & Opportunity Evaluator** | Agent 2 (Quant) | `agent2/phase3-strategies` | **COMPLETED & MERGED** | All 4 Strategies & Evaluator Tested (37 passing) |
+| **Phase 4** | **Pre-Trade Risk & Inventory Balancer** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | **IN_PROGRESS** | 100% of out-of-bounds orders rejected |
 | **Phase 5** | **Paper & Testnet Execution Engine** | Agent 3 (Risk/Exec) | `agent3/phase5-paper` | PENDING | Simulated latency decay & testnet fill verification |
 | **Phase 6** | **Multi-Leg State Machine & Unwind Engine** | Agent 3 (Risk/Exec) | `agent3/phase6-execution` | PENDING | Automated unwind flattens position on simulated leg failure |
 | **Phase 7** | **Non-Blocking Persistence & Async DB Writer** | Agent 3 (Risk/Exec) | `agent3/phase7-persistence` | PENDING | Ingest 10k events/sec with zero event loop lag |
@@ -60,3 +60,44 @@ Implement asynchronous WebSocket streams and REST adapters for Binance Spot and 
 - `tests/unit/test_exchanges_kraken.py`: Verifies mock v2 book subscription and message parsing.
 - `tests/unit/test_market_registry.py`: Verifies ticker normalization and metadata retrieval.
 - All tests must pass with 100% type safety and zero unhandled exceptions.
+
+---
+
+## 3. Phase 3 Work Package: Agent 2 (Quantitative Strategy Engineer) — COMPLETED
+
+### Completed Deliverables
+1. `src/opportunity/fee_calculator.py`: VIP 0 vs. BNB fee calculation, base vs quote fee deductions, round-trip fee compounding.
+2. `src/opportunity/profitability.py`: Multi-level VWAP depth walk, lot floor truncation, and net edge calculation for all 4 strategies (Cross-Exchange, Triangular, Funding/Basis Carry, and Cointegrated Pairs StatArb).
+3. `src/opportunity/evaluator.py`: Freshness validation (< 250ms), crossed book detection, lifecycle state gating (`THEORETICAL_OPPORTUNITY` vs `EXECUTABLE_OPPORTUNITY`), and event dispatch.
+4. `src/strategies/base_strategy.py`: Abstract `StrategyEngine` base class.
+5. `src/strategies/cross_exchange.py`: Strategy 1 (Binance vs Kraken Spot in both directions).
+6. `src/strategies/triangular.py`: Strategy 2 (Single-exchange 3-leg pre-computed cycles indexed by symbol).
+7. `src/strategies/funding_basis.py`: Strategy 3 (Delta-neutral Spot + Short Perp carry, basis tracking, break-even holding period, and exit conditions).
+8. `src/strategies/stat_arb.py`: Strategy 4 (Cointegrated pairs mean-reversion, rolling Z-score triggers $|Z| \ge 2.2$, exit $|Z| \le 0.4$, stop loss $|Z| \ge 4.0$).
+9. `tests/unit/test_opportunity.py` and `tests/unit/test_strategies.py`: 37 passing unit & integration tests.
+
+---
+
+## 4. Phase 4–7 Work Package: Agent 3 (Risk, Execution, Portfolio & Persistence Engineer)
+
+### Scope & Mission
+Implement institutional pre-trade risk controls, portfolio & balance management (including derivatives positions and delta-neutral monitoring), paper/testnet execution state machines with automated IOC unwind, and high-throughput dual-queue asynchronous persistence.
+
+### Assigned Branch & File Locks
+- **Branch:** `agent3/phase4-risk`
+- **Allowed Write Directories:**
+  - `src/risk/*`
+  - `src/portfolio/*`
+  - `src/execution/*`
+  - `src/persistence/*`
+  - `tests/unit/test_risk.py`
+  - `tests/unit/test_portfolio.py`
+  - `tests/unit/test_execution.py`
+  - `tests/unit/test_persistence.py`
+- **Strictly Read-Only:**
+  - `src/core/*` (Do NOT touch `models.py`, `interfaces.py`, `events.py`, or `exceptions.py` without Lead authorization)
+  - `src/market_data/*`
+  - `src/strategies/*`
+  - `src/opportunity/*`
+  - `config/*`
+
