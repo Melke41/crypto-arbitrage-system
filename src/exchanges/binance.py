@@ -7,8 +7,11 @@ supporting both Binance Production and Binance Spot Testnet (testnet.binance.vis
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
+import time
 from decimal import Decimal
 from typing import Any, Callable, Coroutine, Optional
 
@@ -75,6 +78,45 @@ class BinanceExchange(BaseExchange):
         self.registry = MarketRegistry()
         self._ws_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._clock_offset_ms: int = 0
+
+    async def sync_server_time(self) -> int:
+        """Fetch server time from Binance and calculate local clock offset in ms."""
+        session = await self.get_http_session()
+        endpoint = "/fapi/v1/time" if self.is_futures else "/api/v3/time"
+        url = f"{self.rest_url}{endpoint}"
+        t0 = int(time.time() * 1000)
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    t1 = int(time.time() * 1000)
+                    server_time = int(data.get("serverTime", t1))
+                    self._clock_offset_ms = server_time - ((t0 + t1) // 2)
+                    return self._clock_offset_ms
+        except Exception as e:
+            logger.warning("Could not sync server time with Binance (%s): %s", url, e)
+        return self._clock_offset_ms
+
+    def sign_request(
+        self, params: dict[str, Any], recv_window: int = 5000
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Add timestamp with clock offset, recvWindow, and HMAC-SHA256 signature."""
+        signed_params = {str(k): str(v) for k, v in params.items()}
+        if "recvWindow" not in signed_params:
+            signed_params["recvWindow"] = str(recv_window)
+        if "timestamp" not in signed_params:
+            signed_params["timestamp"] = str(int(time.time() * 1000) + self._clock_offset_ms)
+
+        query_string = "&".join(f"{k}={v}" for k, v in sorted(signed_params.items()))
+        signature = hmac.new(
+            self.api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        signed_params["signature"] = signature
+        headers = {"X-MBX-APIKEY": self.api_key}
+        return signed_params, headers
 
     def get_symbol_metadata(self, symbol: str) -> Optional[SymbolMetadata]:
         """Retrieve cached filter limits and precision rules."""
@@ -197,8 +239,45 @@ class BinanceExchange(BaseExchange):
         await self.close_http_session()
 
     async def fetch_balances(self) -> dict[str, BalanceRecord]:
-        """Fetch spot account balances (requires signed request)."""
-        # Placeholder for read-only / public Phase 1 scope
+        """Fetch spot or futures account balances using signed REST request."""
+        if not self.api_key or not self.api_secret:
+            return {}
+        session = await self.get_http_session()
+        endpoint = "/fapi/v2/balance" if self.is_futures else "/api/v3/account"
+        params, headers = self.sign_request({})
+        url = f"{self.rest_url}{endpoint}"
+        try:
+            async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    balances: dict[str, BalanceRecord] = {}
+                    if self.is_futures:
+                        for item in data:
+                            asset = item.get("asset", "")
+                            free = Decimal(str(item.get("availableBalance", "0")))
+                            bal = Decimal(str(item.get("balance", "0")))
+                            locked = bal - free
+                            balances[asset] = BalanceRecord(
+                                exchange=ExchangeId.BINANCE,
+                                asset=asset,
+                                free=free,
+                                locked=max(Decimal("0"), locked),
+                            )
+                    else:
+                        for item in data.get("balances", []):
+                            asset = item.get("asset", "")
+                            free = Decimal(str(item.get("free", "0")))
+                            locked = Decimal(str(item.get("locked", "0")))
+                            if free > Decimal("0") or locked > Decimal("0"):
+                                balances[asset] = BalanceRecord(
+                                    exchange=ExchangeId.BINANCE,
+                                    asset=asset,
+                                    free=free,
+                                    locked=locked,
+                                )
+                    return balances
+        except Exception as e:
+            logger.warning("Error fetching Binance balances: %s", e)
         return {}
 
     async def submit_order(self, order: ExecutionOrder) -> ExecutionLegState:

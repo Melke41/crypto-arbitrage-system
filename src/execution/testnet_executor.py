@@ -43,6 +43,8 @@ class TestnetExecutor(BaseExecutor):
         risk_manager: CentralRiskManager,
         binance_api_key: str = "",
         binance_api_secret: str = "",
+        binance_futures_api_key: Optional[str] = None,
+        binance_futures_api_secret: Optional[str] = None,
         order_book_engine: Optional[OrderBookEngine] = None,
         market_registry: Optional[MarketRegistry] = None,
         paper_fallback: Optional[PaperExecutor] = None,
@@ -55,6 +57,8 @@ class TestnetExecutor(BaseExecutor):
         )
         self.binance_api_key = binance_api_key
         self.binance_api_secret = binance_api_secret
+        self.binance_futures_api_key = binance_futures_api_key or binance_api_key
+        self.binance_futures_api_secret = binance_futures_api_secret or binance_api_secret
         self.paper_fallback = paper_fallback or PaperExecutor(
             balance_manager=balance_manager,
             risk_manager=risk_manager,
@@ -63,11 +67,46 @@ class TestnetExecutor(BaseExecutor):
         )
         self.binance_spot_testnet_url = "https://testnet.binance.vision"
         self.binance_futures_testnet_url = "https://testnet.binancefuture.com"
+        self._spot_clock_offset_ms: int = 0
+        self._futures_clock_offset_ms: int = 0
+
+    async def sync_clock_offsets(self) -> tuple[int, int]:
+        """Fetch server times from Spot and Futures testnets and calibrate clock offsets in ms.
+
+        offset = server_time - (local_time + round_trip / 2)
+        """
+        async with aiohttp.ClientSession() as session:
+            # 1. Spot Testnet Time
+            try:
+                t0 = int(time.time() * 1000)
+                async with session.get(f"{self.binance_spot_testnet_url}/api/v3/time", timeout=3) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        t1 = int(time.time() * 1000)
+                        server_time = int(data.get("serverTime", t1))
+                        self._spot_clock_offset_ms = server_time - ((t0 + t1) // 2)
+            except Exception:
+                pass
+
+            # 2. Futures Testnet Time
+            try:
+                t0 = int(time.time() * 1000)
+                async with session.get(f"{self.binance_futures_testnet_url}/fapi/v1/time", timeout=3) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        t1 = int(time.time() * 1000)
+                        server_time = int(data.get("serverTime", t1))
+                        self._futures_clock_offset_ms = server_time - ((t0 + t1) // 2)
+            except Exception:
+                pass
+
+        return self._spot_clock_offset_ms, self._futures_clock_offset_ms
 
     async def execute_plan(self, plan: ExecutionPlan) -> ExecutionPlan:
         """Route Binance legs to testnet REST and Kraken legs to paper engine."""
-        # If no API keys configured, gracefully route to verified paper execution
-        if not self.binance_api_key or not self.binance_api_secret:
+        # Check if keys exist for the target plan legs
+        has_keys = bool(self.binance_api_key and self.binance_api_secret)
+        if not has_keys:
             return await self.paper_fallback.execute_plan(plan)
 
         ExecutionStateMachine.transition_plan(plan, ExecutionPlanStatus.EXECUTING)
@@ -105,15 +144,19 @@ class TestnetExecutor(BaseExecutor):
         is_perp = ":" in order.symbol
         base_url = self.binance_futures_testnet_url if is_perp else self.binance_spot_testnet_url
         endpoint = "/fapi/v1/order" if is_perp else "/api/v3/order"
+        key = self.binance_futures_api_key if is_perp else self.binance_api_key
+        sec = self.binance_futures_api_secret if is_perp else self.binance_api_secret
+        offset = self._futures_clock_offset_ms if is_perp else self._spot_clock_offset_ms
 
         symbol_clean = order.symbol.split(":")[0].replace("/", "")
-        timestamp = int(time.time() * 1000)
+        timestamp = int(time.time() * 1000) + offset
 
         params: dict[str, str] = {
             "symbol": symbol_clean,
             "side": order.side.value,
             "type": "MARKET" if order.order_type == OrderType.MARKET else "LIMIT",
             "quantity": str(order.quantity),
+            "recvWindow": "5000",
             "timestamp": str(timestamp),
         }
         if order.price and order.order_type != OrderType.MARKET:
@@ -122,13 +165,13 @@ class TestnetExecutor(BaseExecutor):
 
         query_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
         signature = hmac.new(
-            self.binance_api_secret.encode("utf-8"),
+            sec.encode("utf-8"),
             query_string.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
         params["signature"] = signature
 
-        headers = {"X-MBX-APIKEY": self.binance_api_key}
+        headers = {"X-MBX-APIKEY": key}
 
         try:
             async with aiohttp.ClientSession() as session:

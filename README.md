@@ -2,10 +2,10 @@
 
 An institutional-grade, event-driven, modular quantitative arbitrage research and execution engine in Python integrating **Binance Spot**, **Binance USDⓈ-M Perpetual Futures**, and **Kraken Spot**.
 
-[![Release](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/Melke41/crypto-arbitrage-system)
+[![Release](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/Melke41/crypto-arbitrage-system)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-82%20passed%20%7C%201%20skipped-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-91%20passed%20%7C%201%20skipped-brightgreen.svg)]()
 
 ---
 
@@ -263,14 +263,21 @@ The system employs a strict 3-tier promotion progression to ensure quantitative 
 1. Generate testnet API credentials:
    - Binance Spot Testnet: `https://testnet.binance.vision`
    - Binance Futures Testnet: `https://testnet.binancefuture.com`
-2. Update `.env`:
+2. Update `.env` with separate Spot and Futures credentials:
    ```ini
    EXECUTION_MODE=TESTNET
-   BINANCE_API_KEY=your_testnet_key
-   BINANCE_API_SECRET=your_testnet_secret
+   BINANCE_API_KEY=your_spot_testnet_key
+   BINANCE_API_SECRET=your_spot_testnet_secret
+   BINANCE_FUTURES_API_KEY=your_futures_testnet_key
+   BINANCE_FUTURES_API_SECRET=your_futures_testnet_secret
    ```
-3. Run the orchestrator. Order routing will place authenticated testnet orders on Binance while pairing with our high-precision internal paper-matching engine for Kraken.
-4. **Acceptance Criteria for Promotion:**
+3. Run the automated 5-step testnet verification CLI:
+   ```bash
+   .venv/bin/python scripts/verify_testnet.py
+   ```
+   *Calibrates server clock offsets, verifies virtual account balances on Spot & Futures, submits a test limit order and cancels it, checks derivatives leverage, and runs hybrid Kraken paper matching.*
+4. Launch the autonomous engine in TESTNET mode (`.venv/bin/python -m src.main`).
+5. **Acceptance Criteria for Promotion:**
    - Successful HMAC SHA256 authentication and signature validation.
    - Successful round-trip order placement, fill polling, and balance deduction.
    - Verified automated emergency unwind on simulated leg rejection.

@@ -109,10 +109,20 @@ class SystemSettings(BaseModel):
     # API Credentials
     binance_api_key: str = ""
     binance_api_secret: str = ""
+    binance_futures_api_key: str = ""
+    binance_futures_api_secret: str = ""
     binance_use_testnet: bool = True
 
     kraken_api_key: str = ""
     kraken_api_secret: str = ""
+
+    def get_binance_credentials(self, is_futures: bool = False) -> tuple[str, str]:
+        """Return (api_key, api_secret) tailored for Spot or Futures."""
+        if is_futures:
+            key = self.binance_futures_api_key or self.binance_api_key
+            sec = self.binance_futures_api_secret or self.binance_api_secret
+            return key, sec
+        return self.binance_api_key, self.binance_api_secret
 
     # Latency & Feature Flags
     max_data_age_ms: int = 250
@@ -142,6 +152,8 @@ class SystemSettings(BaseModel):
         )
         b_key = os.getenv("BINANCE_API_KEY", "")
         b_sec = os.getenv("BINANCE_API_SECRET", "")
+        b_fut_key = os.getenv("BINANCE_FUTURES_API_KEY", b_key)
+        b_fut_sec = os.getenv("BINANCE_FUTURES_API_SECRET", b_sec)
         b_testnet = os.getenv("BINANCE_USE_TESTNET", "true").lower() == "true"
         k_key = os.getenv("KRAKEN_API_KEY", "")
         k_sec = os.getenv("KRAKEN_API_SECRET", "")
@@ -202,6 +214,8 @@ class SystemSettings(BaseModel):
             database_url=db_url,
             binance_api_key=b_key,
             binance_api_secret=b_sec,
+            binance_futures_api_key=b_fut_key,
+            binance_futures_api_secret=b_fut_sec,
             binance_use_testnet=b_testnet,
             kraken_api_key=k_key,
             kraken_api_secret=k_sec,

@@ -12,13 +12,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
-from decimal import Decimal
-from typing import Any
 import urllib.error
 import urllib.request
-import json
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+# Ensure project root is in sys.path when script is executed directly
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # ==============================================================================

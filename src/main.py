@@ -144,6 +144,8 @@ class ArbitrageSystemOrchestrator:
                 risk_manager=self.risk_manager,
                 binance_api_key=self.settings.binance_api_key,
                 binance_api_secret=self.settings.binance_api_secret,
+                binance_futures_api_key=self.settings.binance_futures_api_key,
+                binance_futures_api_secret=self.settings.binance_futures_api_secret,
                 order_book_engine=self.order_book_engine,
                 market_registry=self.market_registry,
             )
