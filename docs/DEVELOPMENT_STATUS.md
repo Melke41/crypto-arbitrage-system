@@ -10,12 +10,13 @@
 | **Phase 2 (Market Data)** | **Verified L2 Book & Mark-Price Engine** | Agent 1 (Data) | `agent1/phase1-connectivity` | **COMPLETED & MERGED** | U/u sequence tracker & Kraken CRC32 verified |
 | **Phase 2 (Persistence)** | **L2 Snapshot Database Partitioning** | Agent 3 (Risk/Exec) | `agent3/phase7-persistence` | PENDING | Scoped with Phase 7 async persistence worker |
 | **Phase 3** | **4 Quantitative Strategy Engines & Opportunity Evaluator** | Agent 2 (Quant) | `agent2/phase3-strategies` | **COMPLETED & MERGED** | All 4 Strategies & Evaluator Tested (37 passing) |
-| **Phase 4** | **Pre-Trade Risk & Inventory Balancer** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | **IN_PROGRESS** | 100% of out-of-bounds orders rejected |
-| **Phase 5** | **Paper & Testnet Execution Engine** | Agent 3 (Risk/Exec) | `agent3/phase5-paper` | PENDING | Simulated latency decay & testnet fill verification |
-| **Phase 6** | **Multi-Leg State Machine & Unwind Engine** | Agent 3 (Risk/Exec) | `agent3/phase6-execution` | PENDING | Automated unwind flattens position on simulated leg failure |
-| **Phase 7** | **Non-Blocking Persistence & Async DB Writer** | Agent 3 (Risk/Exec) | `agent3/phase7-persistence` | PENDING | Ingest 10k events/sec with zero event loop lag |
-| **Phase 8** | **Quantitative Analytics & Performance** | Agent 4 (QA/Val) | `agent4/phase8-analytics` | PENDING | Slippage attribution & PnL reporting automated |
-| **Phase 9** | **Operational Dashboard & Hardening** | Agent 4 (QA/Val) | `agent4/phase9-dashboard` | PENDING | 2-hour end-to-end stress run with zero crashes |
+| **Phase 4** | **Pre-Trade Risk & Inventory Balancer** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | **COMPLETED & MERGED** | 8 pre-trade risk gates & atomic balance reservation verified |
+| **Phase 5** | **Paper & Testnet Execution Engine** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | **COMPLETED & MERGED** | Simulated latency decay & testnet fill routing verified |
+| **Phase 6** | **Multi-Leg State Machine & Unwind Engine** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | **COMPLETED & MERGED** | Directional ±20 bps IOC unwind & 50 bps circuit breaker verified |
+| **Phase 7 (Persistence)** | **Non-Blocking Persistence & Async DB Writer** | Agent 3 (Risk/Exec) | `agent3/phase4-risk` | **COMPLETED & MERGED** | Dual-queue worker (unbounded critical + droppable telemetry) verified |
+| **Core Orchestrator & API** | **Tick-to-Trade Orchestrator & FastAPI Server** | **Lead Agent** | `main` | **COMPLETED & MERGED** | Full autonomous pipeline and REST control endpoints tested |
+| **Phase 8 (Analytics & Backtest)** | **Quantitative Analytics & Backtester** | Agent 4 (QA/Val) | `agent4/phase7-8-validation` | **IN_PROGRESS** | Slippage attribution, PnL reporting, and historical replay |
+| **Phase 9 (Dashboard & Validation)** | **Streamlit Dashboard & Chaos Simulation** | Agent 4 (QA/Val) | `agent4/phase7-8-validation` | **IN_PROGRESS** | Interactive dashboard & 4-strategy end-to-end chaos tests |
 
 ---
 
@@ -81,23 +82,44 @@ Implement asynchronous WebSocket streams and REST adapters for Binance Spot and 
 ## 4. Phase 4–7 Work Package: Agent 3 (Risk, Execution, Portfolio & Persistence Engineer)
 
 ### Scope & Mission
-Implement institutional pre-trade risk controls, portfolio & balance management (including derivatives positions and delta-neutral monitoring), paper/testnet execution state machines with automated IOC unwind, and high-throughput dual-queue asynchronous persistence.
+Implement institutional pre-trade risk controls, portfolio & balance management (including derivatives positions and delta-neutral monitoring), paper/testnet execution state machines with automated IOC unwind, and high-throughput dual-queue asynchronous persistence. **COMPLETED & MERGED**.
+
+---
+
+## 5. Core Orchestrator & API Work Package: Lead Agent — COMPLETED
+
+### Completed Deliverables
+1. `src/main.py`: `ArbitrageSystemOrchestrator` non-blocking tick-to-trade autonomous pipeline wiring all market data feeds, 4 strategy engines, opportunity evaluator, 8-gate risk manager, multi-leg executor, and dual-queue persistence writer.
+2. `src/api/routes.py`: FastAPI server exposing `/health`, `/portfolio`, `/opportunities`, `/executions`, and manual kill-switch `/risk/kill-switch`.
+3. `tests/unit/test_orchestrator_api.py`: Comprehensive integration and API tests verifying full pipeline execution and REST controls.
+
+---
+
+## 6. Phase 8 & 9 Work Package: Agent 4 (QA, Analytics, Dashboard & Validation Engineer)
+
+### Scope & Mission
+Implement quantitative financial performance metrics, offline reporting, historical replay backtesting, interactive Streamlit operations dashboard, and end-to-end chaos/failure simulation suites.
 
 ### Assigned Branch & File Locks
-- **Branch:** `agent3/phase4-risk`
+- **Branch:** `agent4/phase7-8-validation`
 - **Allowed Write Directories:**
-  - `src/risk/*`
-  - `src/portfolio/*`
-  - `src/execution/*`
-  - `src/persistence/*`
-  - `tests/unit/test_risk.py`
-  - `tests/unit/test_portfolio.py`
-  - `tests/unit/test_execution.py`
-  - `tests/unit/test_persistence.py`
+  - `src/analytics/*`
+  - `dashboard/app.py`
+  - `tests/unit/test_analytics.py`
+  - `tests/simulation/test_end_to_end_simulation.py`
+  - `tests/simulation/test_failure_scenarios.py`
 - **Strictly Read-Only:**
-  - `src/core/*` (Do NOT touch `models.py`, `interfaces.py`, `events.py`, or `exceptions.py` without Lead authorization)
+  - `src/core/*`
+  - `src/exchanges/*`
   - `src/market_data/*`
   - `src/strategies/*`
   - `src/opportunity/*`
+  - `src/risk/*`
+  - `src/execution/*`
+  - `src/portfolio/*`
+  - `src/persistence/*`
+  - `src/main.py`
+  - `src/api/*`
   - `config/*`
+
 
